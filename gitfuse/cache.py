@@ -55,7 +55,8 @@ class TaggedCache(dict):
 
 caches = {'user-repo': TaggedCache('user_repo_cache.json'),
           'org-repo': TaggedCache('org_repo_cache.json'),
-          'tags': TaggedCache('tag_cache.json')
+          'tags': TaggedCache('tag_cache.json'),
+          'branches': TaggedCache('branch_cache.json'),
           }
 
 

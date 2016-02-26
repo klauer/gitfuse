@@ -128,6 +128,13 @@ async def get_tags(owner, repo, **kwargs):
     return resp, resp.json
 
 
+async def get_branches(owner, repo, **kwargs):
+    url = 'repos/{owner}/{repo}/branches'.format(owner=owner, repo=repo)
+    resp = await get_if_newer_than_cache(url, cache=caches['branches'],
+                                         **kwargs)
+    return resp, resp.json
+
+
 if __name__ == '__main__':
     for loggername in ('gitfuse', '__main__'):
         logging.getLogger(loggername).setLevel(logging.DEBUG)
@@ -141,5 +148,6 @@ if __name__ == '__main__':
     logger.debug('Get tags')
     tresp, ophyd_tags = loop.run_until_complete(get_tags('nsls-ii', 'ophyd'))
     logger.debug('Get branches')
-    tresp, ophyd_tags = loop.run_until_complete(get_tags('nsls-ii', 'ophyd'))
+    bresp, ophyd_branches = loop.run_until_complete(get_branches('nsls-ii',
+                                                                 'ophyd'))
     loop.close()
