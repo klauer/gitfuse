@@ -5,7 +5,7 @@ from stat import S_IFDIR, S_IFREG  # S_IFMT, S_IMODE
 from .util import EntryInfo
 
 
-class Readable(str):
+class ReadableString(str):
     def read(self, size, offset):
         return self.encode('utf-8')[offset:offset + size]
 
@@ -75,6 +75,7 @@ class PathTree:
                           name=dirname, obj=tree)
         self.entries[dirname] = entry
         self.inode_to_entry[tree.inode] = entry
+        return entry
 
     def add_file(self, fn, *, obj=None):
         inode = self.fuse.create_ino()
@@ -86,6 +87,7 @@ class PathTree:
                           obj=obj)
         self.entries[fn] = entry
         self.inode_to_entry[inode] = entry
+        return entry
 
     def get_attr(self, inode):
         ret = dict(self.file_attr)

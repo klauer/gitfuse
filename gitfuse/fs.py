@@ -7,7 +7,7 @@ import errno
 from stat import S_IFDIR, S_IFREG  # S_IFMT, S_IMODE
 
 from fusell import FUSELL
-from .path_tree import (PathTree, Readable)
+from .path_tree import (PathTree, ReadableString)
 
 
 class FileSystem(FUSELL):
@@ -33,9 +33,9 @@ class FileSystem(FUSELL):
         self.ino_owners = {}
 
         tree = PathTree(self, parent_inode=1)
-        tree.add_file('file1', obj=Readable('file1\n'))
-        tree.add_file('file2', obj=Readable('file2\n'))
-        tree.add_file('file3', obj=Readable('file3\n'))
+        tree.add_file('file1', obj=ReadableString('file1\n'))
+        tree.add_file('file2', obj=ReadableString('file2\n'))
+        tree.add_file('file3', obj=ReadableString('file3\n'))
         tree.add_dir('dir1')
         tree.add_dir('dir2')
         tree.add_dir('dir3')
