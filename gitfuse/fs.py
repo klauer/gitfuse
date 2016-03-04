@@ -26,16 +26,7 @@ class FileSystem(FUSELL):
     def init(self, userdata, conn):
         self.ino = 0
         self.inode_entries = {}
-
-        tree = DirectoryEntry(self, parent_inode=1)
-        tree.add_file('file1', obj=ReadableString('file1\n'))
-        tree.add_file('file2', obj=ReadableString('file2\n'))
-        tree.add_file('file3', obj=ReadableString('file3\n'))
-        tree.add_dir('dir1')
-        tree.add_dir('dir2')
-        tree.add_dir('dir3')
-        tree.add_link('link1', 'file1')
-        tree.add_link('link2', '/opt')
+        self.root = DirectoryEntry(self, parent_inode=1)
 
     forget = None
 
@@ -45,6 +36,7 @@ class FileSystem(FUSELL):
         except KeyError:
             self.reply_err(req, errno.ENOENT)
         else:
+            print('inode', ino, 'attr', entry.attr, type(entry.obj))
             self.reply_attr(req, entry.attr, 1.0)
 
     def lookup(self, req, parent_inode, name):
@@ -177,6 +169,21 @@ class FileSystem(FUSELL):
     #     self.data[ino] = self.data[ino][:off] + buf
     #     self.attr[ino]['st_size'] = len(self.data[ino])
     #     self.reply_write(req, len(buf))
+
+class TestFileSystem(FileSystem):
+    def init(self, userdata, conn):
+        super().init(userdata, conn)
+
+        tree = self.root
+        tree.add_file('file1', obj=ReadableString('file1\n'))
+        tree.add_file('file2', obj=ReadableString('file2\n'))
+        tree.add_file('file3', obj=ReadableString('file3\n'))
+        tree.add_dir('dir1')
+        tree.add_dir('dir2')
+        tree.add_dir('dir3')
+        tree.add_link('link1', 'file1')
+        tree.add_link('link2', '/opt')
+
 
 if __name__ == '__main__':
     if len(sys.argv) != 2:

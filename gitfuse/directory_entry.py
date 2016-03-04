@@ -76,7 +76,7 @@ class DirectoryEntry:
                                   dir_attr=dict(self.dir_attr),
                                   )
 
-        attr = dict(self.dir_attr)
+        attr = tree.attr
         attr['st_ino'] = tree.inode
         self.attr['st_nlink'] += 1
 

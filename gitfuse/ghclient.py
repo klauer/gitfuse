@@ -30,7 +30,7 @@ class GitResponse:
 
 class CachedResponse:
     def __init__(self, timestamp, json):
-        self.timestasmp = timestamp
+        self.timestamp = timestamp
         self.json = json
 
 
