@@ -13,12 +13,11 @@ class ReadableString(str):
 class DirectoryEntry:
     def __init__(self, fuse, parent_inode, *, file_attr=None, dir_attr=None,
                  timestamp=None):
-        self.fuse = fuse
         self.inode = fuse.create_ino()
-        self.fuse.trees[self.inode] = self
+        self.fuse = fuse
         self.parent_inode = parent_inode
-        self.entries = {}
-        self.inode_to_entry = {}
+        self.entry_by_name = {}
+        self.inodes = []
 
         if timestamp is None:
             timestamp = time.time()
@@ -49,10 +48,14 @@ class DirectoryEntry:
         self.dir_attr = dir_attr
         self.attr = dict(dir_attr, inode=self.inode,
                          st_nlink=2)
+        self.entry = EntryInfo(type_='direntry', inode=self.inode,
+                               attr=self.attr, name='', obj=self)
+
+        fuse.inode_entries[self.inode] = self.entry
 
     def lookup(self, parent_inode, name):
         try:
-            return self.entries[name]
+            return self.entry_by_name[name]
         except KeyError:
             raise ValueError('Invalid entry name')
 
@@ -61,7 +64,7 @@ class DirectoryEntry:
                    ('..', {'st_ino': self.parent_inode, 'st_mode': S_IFDIR})
                    ]
 
-        for fn, info in self.entries.items():
+        for fn, info in self.entry_by_name.items():
             entries.append((fn, info.attr))
 
         return entries
@@ -79,21 +82,22 @@ class DirectoryEntry:
 
         entry = EntryInfo(type_='dir', inode=tree.inode, attr=attr,
                           name=dirname, obj=tree)
-        self.entries[dirname] = entry
-        self.inode_to_entry[tree.inode] = entry
+        self.entry_by_name[dirname] = entry
+        self.fuse.inode_entries[tree.inode] = entry
         return entry
 
     def add_file(self, fn, *, obj=None, inode=None):
         if inode is None:
             inode = self.fuse.create_ino()
+
         attr = dict(self.file_attr)
         attr['st_ino'] = inode
         attr['st_size'] = len(obj)
 
         entry = EntryInfo(type_='file', inode=inode, attr=attr, name=fn,
                           obj=obj)
-        self.entries[fn] = entry
-        self.inode_to_entry[inode] = entry
+        self.entry_by_name[fn] = entry
+        self.fuse.inode_entries[inode] = entry
         return entry
 
     def add_files(self, filenames):
@@ -107,13 +111,3 @@ class DirectoryEntry:
 
     def get_dir_attr(self, inode):
         return dict(self.dir_attr, st_ino=inode)
-
-    def __contains__(self, inode):
-        return (inode in self.inode_to_entry)
-
-    def read(self, inode, size, offset):
-        obj = self.inode_to_entry[inode].obj
-        if obj is None:
-            return b''
-
-        return obj.read(size, offset)

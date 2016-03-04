@@ -28,8 +28,7 @@ class FileSystem(FUSELL):
 
     def init(self, userdata, conn):
         self.ino = 0
-        self.trees = {}
-        self.ino_owners = {}
+        self.inode_entries = {}
 
         tree = DirectoryEntry(self, parent_inode=1)
         tree.add_file('file1', obj=ReadableString('file1\n'))
@@ -44,39 +43,22 @@ class FileSystem(FUSELL):
 
     forget = None
 
-    def find_owner(self, inode):
-        # TODO missing data structure
-        if inode <= self.ino:
-            for tree_inode, tree in self.trees.items():
-                if inode in tree:
-                    return tree
-
-        raise ValueError('Unknown inode')
-
     def getattr(self, req, ino, fi):
         print('getattr:', ino)
-        if ino in self.trees:
-            tree = self.trees[ino]
-            self.reply_attr(req, tree.attr, 1.0)
-            return
+        try:
+            entry = self.inode_entries[ino]
+        except KeyError:
+            self.reply_err(req, errno.ENOENT)
         else:
-            try:
-                tree = self.find_owner(ino)
-            except ValueError:
-                pass
-            else:
-                entry = tree.inode_to_entry[ino]
-                self.reply_attr(req, entry.attr, 1.0)
-                return
-
-        self.reply_err(req, errno.ENOENT)
+            self.reply_attr(req, entry.attr, 1.0)
 
     def lookup(self, req, parent_inode, name):
-        parent = self.trees[parent_inode]
+        parent = self.inode_entries[parent_inode].obj
         name = name.decode('utf-8')
+
         try:
             entry = parent.lookup(parent_inode, name)
-        except ValueError:
+        except (ValueError, AttributeError):
             self.reply_err(req, errno.ENOENT)
         else:
             entry = dict(ino=entry.inode,
@@ -86,17 +68,27 @@ class FileSystem(FUSELL):
             self.reply_entry(req, entry)
 
     def readdir(self, req, ino, size, off, fi):
-        entries = self.trees[ino].get_entries()
+        tree = self.inode_entries[ino].obj
+        entries = tree.get_entries()
         self.reply_readdir(req, size, off, entries)
 
     def read(self, req, ino, size, offset, fi):
         print('read:', ino, size, offset)
         try:
-            tree = self.find_owner(ino)
-        except ValueError:
+            obj = self.inode_entries[ino].obj
+        except (KeyError, AttributeError):
             self.reply_err(req, errno.EIO)
         else:
-            self.reply_buf(req, tree.read(ino, size, offset))
+            try:
+                if obj is None:
+                    buf = b''
+                else:
+                    buf = obj.read(size, offset)
+            except Exception:
+                self.reply_err(req, errno.EIO)
+                return
+
+            self.reply_buf(req, buf)
 
     # def mkdir(self, req, parent, name, mode):
     #     print('mkdir:', parent, name)
