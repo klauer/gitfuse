@@ -1,4 +1,6 @@
+import os
 import sys
+import signal
 import threading
 import errno
 import stat
@@ -183,9 +185,16 @@ class TestFileSystem(FileSystem):
         tree.add_link('link1', 'file1')
         tree.add_link('link2', '/opt')
 
+    def mkdir(self, req, parent, name, mode):
+        if parent == self.root.inode and name.decode('utf-8') == 'exit':
+            os.kill(os.getpid(), signal.SIGHUP)
+
+        self.reply_err(req, errno.EIO)
+
 
 if __name__ == '__main__':
     if len(sys.argv) != 2:
         print('usage: %s <mountpoint>' % sys.argv[0])
         sys.exit(1)
-    fuse = FileSystem(sys.argv[1])
+
+    fuse = TestFileSystem(sys.argv[1])

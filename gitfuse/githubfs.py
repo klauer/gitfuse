@@ -4,9 +4,12 @@ Usage:
     githubfs.py [-v] <mount_point> [--users=<users>] [--orgs=<orgs>]
 '''
 
+import os
+import signal
 import time
 import asyncio
 import logging
+import errno
 
 from datetime import datetime
 
@@ -154,9 +157,14 @@ class GithubFileSystem(FileSystem):
     def update_repo(self, user, repo_name):
         pass
 
+    def mkdir(self, req, parent, name, mode):
+        if parent == self.root.inode and name.decode('utf-8') == 'exit':
+            os.kill(os.getpid(), signal.SIGHUP)
+
+        self.reply_err(req, errno.EIO)
+
 
 def main(mount_point, users, orgs):
-    loop = asyncio.get_event_loop()
     GithubFileSystem(mount_point, users=users, organizations=orgs)
 
 
