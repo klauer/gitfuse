@@ -7,7 +7,7 @@ import errno
 from stat import S_IFDIR, S_IFREG  # S_IFMT, S_IMODE
 
 from fusell import FUSELL
-from .path_tree import (PathTree, ReadableString)
+from .directory_entry import (DirectoryEntry, ReadableString)
 
 
 class FileSystem(FUSELL):
@@ -22,17 +22,16 @@ class FileSystem(FUSELL):
 
     def create_ino_range(self, num):
         with self.lock:
-            start_inode = self.ino
-            self.ino += num
-            end_inode = self.ino
-            return start_inode + 1, end_inode + 1
+            start_inode = self.ino + 1
+            self.ino = start_inode + num
+            return range(start_inode, self.ino + 1)
 
     def init(self, userdata, conn):
         self.ino = 0
         self.trees = {}
         self.ino_owners = {}
 
-        tree = PathTree(self, parent_inode=1)
+        tree = DirectoryEntry(self, parent_inode=1)
         tree.add_file('file1', obj=ReadableString('file1\n'))
         tree.add_file('file2', obj=ReadableString('file2\n'))
         tree.add_file('file3', obj=ReadableString('file3\n'))
@@ -74,15 +73,16 @@ class FileSystem(FUSELL):
 
     def lookup(self, req, parent_inode, name):
         parent = self.trees[parent_inode]
+        name = name.decode('utf-8')
         try:
-            entry = parent.entries[name.decode('utf-8')]
-        except KeyError:
+            entry = parent.lookup(parent_inode, name)
+        except ValueError:
             self.reply_err(req, errno.ENOENT)
         else:
             entry = dict(ino=entry.inode,
                          attr=entry.attr,
-                         atttr_timeout=1.0,
-                         entry_timeout=.0)
+                         attr_timeout=1.0,
+                         entry_timeout=1.0)
             self.reply_entry(req, entry)
 
     def readdir(self, req, ino, size, off, fi):
@@ -119,7 +119,7 @@ class FileSystem(FUSELL):
     #     self.parent[ino] = parent
     #     self.children[parent][name] = ino
 
-    #     entry = dict(ino=ino, attr=attr, atttr_timeout=1.0,
+    #     entry = dict(ino=ino, attr=attr, attr_timeout=1.0,
     #     entry_timeout=1.0)
     #     self.reply_entry(req, entry)
 
@@ -143,7 +143,7 @@ class FileSystem(FUSELL):
     #    self.attr[parent]['st_nlink'] += 1
     #    self.children[parent][name] = ino
 
-    #    entry = dict(ino=ino, attr=attr, atttr_timeout=1.0,
+    #    entry = dict(ino=ino, attr=attr, attr_timeout=1.0,
     #                 entry_timeout=1.0)
     #    self.reply_entry(req, entry)
 

@@ -10,7 +10,7 @@ class ReadableString(str):
         return self.encode('utf-8')[offset:offset + size]
 
 
-class PathTree:
+class DirectoryEntry:
     def __init__(self, fuse, parent_inode, *, file_attr=None, dir_attr=None,
                  timestamp=None):
         self.fuse = fuse
@@ -50,6 +50,12 @@ class PathTree:
         self.attr = dict(dir_attr, inode=self.inode,
                          st_nlink=2)
 
+    def lookup(self, parent_inode, name):
+        try:
+            return self.entries[name]
+        except KeyError:
+            raise ValueError('Invalid entry name')
+
     def get_entries(self):
         entries = [('.', self.attr),
                    ('..', {'st_ino': self.parent_inode, 'st_mode': S_IFDIR})
@@ -62,10 +68,10 @@ class PathTree:
 
     def add_dir(self, dirname, *, tree=None):
         if tree is None:
-            tree = PathTree(self.fuse, self.inode,
-                            file_attr=dict(self.file_attr),
-                            dir_attr=dict(self.dir_attr),
-                            )
+            tree = DirectoryEntry(self.fuse, self.inode,
+                                  file_attr=dict(self.file_attr),
+                                  dir_attr=dict(self.dir_attr),
+                                  )
 
         attr = dict(self.dir_attr)
         attr['st_ino'] = tree.inode
@@ -77,8 +83,9 @@ class PathTree:
         self.inode_to_entry[tree.inode] = entry
         return entry
 
-    def add_file(self, fn, *, obj=None):
-        inode = self.fuse.create_ino()
+    def add_file(self, fn, *, obj=None, inode=None):
+        if inode is None:
+            inode = self.fuse.create_ino()
         attr = dict(self.file_attr)
         attr['st_ino'] = inode
         attr['st_size'] = len(obj)
@@ -89,15 +96,17 @@ class PathTree:
         self.inode_to_entry[inode] = entry
         return entry
 
+    def add_files(self, filenames):
+        inodes = self.fuse.create_ino_range(filenames)
+        return {fn: self.add_file(fn, inode=ino)
+                for ino, fn in zip(filenames, inodes)
+                }
+
     def get_attr(self, inode):
-        ret = dict(self.file_attr)
-        ret.update(st_ino=inode)
-        return ret
+        return dict(self.file_attr, st_ino=inode)
 
     def get_dir_attr(self, inode):
-        ret = dict(self.file_attr)
-        ret.update(st_ino=inode)
-        return ret
+        return dict(self.dir_attr, st_ino=inode)
 
     def __contains__(self, inode):
         return (inode in self.inode_to_entry)
