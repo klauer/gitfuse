@@ -1,7 +1,7 @@
 import os
 import time
 
-from stat import S_IFDIR, S_IFREG  # S_IFMT, S_IMODE
+import stat
 from .util import EntryInfo
 
 
@@ -23,7 +23,7 @@ class DirectoryEntry:
             timestamp = time.time()
 
         if dir_attr is None:
-            dir_attr = dict(st_mode=S_IFDIR | 0o555,
+            dir_attr = dict(st_mode=stat.S_IFDIR | 0o555,
                             st_nlink=2,
                             st_uid=os.getuid(),
                             st_gid=os.getgid(),
@@ -34,7 +34,7 @@ class DirectoryEntry:
                             )
 
         if file_attr is None:
-            file_attr = dict(st_mode=S_IFREG | 0o555,
+            file_attr = dict(st_mode=stat.S_IFREG | 0o555,
                              st_nlink=1,
                              st_uid=os.getuid(),
                              st_gid=os.getgid(),
@@ -61,7 +61,7 @@ class DirectoryEntry:
 
     def get_entries(self):
         entries = [('.', self.attr),
-                   ('..', {'st_ino': self.parent_inode, 'st_mode': S_IFDIR})
+                   ('..', dict(st_ino=self.parent_inode, st_mode=stat.S_IFDIR))
                    ]
 
         for fn, info in self.entry_by_name.items():
@@ -96,6 +96,22 @@ class DirectoryEntry:
 
         entry = EntryInfo(type_='file', inode=inode, attr=attr, name=fn,
                           obj=obj)
+        self.entry_by_name[fn] = entry
+        self.fuse.inode_entries[inode] = entry
+        return entry
+
+    def add_link(self, fn, dest, *, obj=None, inode=None):
+        if inode is None:
+            inode = self.fuse.create_ino()
+
+        attr = dict(self.file_attr)
+        attr['st_mode'] = (stat.S_IFLNK | 0o777)
+        attr['st_ino'] = inode
+        attr['st_size'] = len(dest) + 1
+        attr['st_nlink'] = 1
+
+        entry = EntryInfo(type_='link', inode=inode, attr=attr, name=fn,
+                          obj=ReadableString(dest))
         self.entry_by_name[fn] = entry
         self.fuse.inode_entries[inode] = entry
         return entry

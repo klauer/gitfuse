@@ -1,10 +1,7 @@
-import os
 import sys
-import time
 import threading
 import errno
-
-from stat import S_IFDIR, S_IFREG  # S_IFMT, S_IMODE
+import stat
 
 from fusell import FUSELL
 from .directory_entry import (DirectoryEntry, ReadableString)
@@ -37,14 +34,12 @@ class FileSystem(FUSELL):
         tree.add_dir('dir1')
         tree.add_dir('dir2')
         tree.add_dir('dir3')
-        # self.attr[1] = dict(st_ino=1,
-        #                     st_mode=S_IFDIR | 0o777,
-        #                     st_nlink=2)
+        tree.add_link('link1', 'file1')
+        tree.add_link('link2', '/opt')
 
     forget = None
 
     def getattr(self, req, ino, fi):
-        print('getattr:', ino)
         try:
             entry = self.inode_entries[ino]
         except KeyError:
@@ -89,6 +84,20 @@ class FileSystem(FUSELL):
                 return
 
             self.reply_buf(req, buf)
+
+    def readlink(self, req, ino):
+        print('readlink', req, ino)
+        try:
+            entry = self.inode_entries[ino]
+        except (KeyError, AttributeError):
+            self.reply_err(req, errno.ENOENT)
+        else:
+            attr = entry.attr
+            if (attr['st_mode'] & stat.S_IFLNK) == stat.S_IFLNK:
+                reply = entry.obj.read(2048, 0)
+                self.reply_readlink(req, reply)
+            else:
+                self.reply_err(req, errno.ENOENT)
 
     # def mkdir(self, req, parent, name, mode):
     #     print('mkdir:', parent, name)
