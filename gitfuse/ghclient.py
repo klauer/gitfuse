@@ -135,6 +135,25 @@ async def get_branches(owner, repo, **kwargs):
     return resp, resp.json
 
 
+async def get_branch_info(owner, repo, branch, **kwargs):
+    url = ('repos/{owner}/{repo}/branches/{branch}'
+           ''.format(owner=owner, repo=repo, branch=branch))
+
+    resp = await get_if_newer_than_cache(url, cache=caches['branches'],
+                                         **kwargs)
+    return resp, resp.json
+
+
+async def get_commit_info(owner, repo, sha1, **kwargs):
+    url = ('repos/{owner}/{repo}/git/commits/{sha1}'
+           ''.format(owner=owner, repo=repo, sha1=sha1))
+
+    resp = await get_if_newer_than_cache(url, cache=caches['commits'],
+                                         **kwargs)
+    return resp, resp.json
+
+
+
 if __name__ == '__main__':
     for loggername in ('gitfuse', '__main__'):
         logging.getLogger(loggername).setLevel(logging.DEBUG)

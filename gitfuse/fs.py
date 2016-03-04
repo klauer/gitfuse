@@ -36,7 +36,6 @@ class FileSystem(FUSELL):
         except KeyError:
             self.reply_err(req, errno.ENOENT)
         else:
-            print('inode', ino, 'attr', entry.attr, type(entry.obj))
             self.reply_attr(req, entry.attr, 1.0)
 
     def lookup(self, req, parent_inode, name):
