@@ -1,7 +1,13 @@
 '''
 
 Usage:
-    githubfs.py [-v] <mount_point> [--users=<users>] [--orgs=<orgs>]
+  githubfs.py [-v] <mount_point> [--users=<list>] [--orgs=<list>]
+              [--update-rate=<rate>]
+
+Options:
+  --users=<users>         comma-delimited set of users.
+  --orgs=<orgs>           comma-delimited set of organizations.
+  --update-rate=<rate>    update rate in seconds [default: 60.0].
 '''
 
 import os
@@ -9,6 +15,7 @@ import signal
 import time
 import asyncio
 import logging
+import threading
 import errno
 
 from datetime import datetime
@@ -53,6 +60,9 @@ class RepoMetadataDirectory(DirectoryEntry):
 
 class RepoTagDirectory(RepoMetadataDirectory):
     def _initialize(self):
+        self.update()
+
+    def update(self):
         _, tags = self.loop.run_until_complete(get_tags(self.repo_owner,
                                                         self.repo_name))
 
@@ -65,7 +75,11 @@ class RepoTagDirectory(RepoMetadataDirectory):
         tag_info = self.loop.run_until_complete(gather_fut)
 
         for (tag_name, sha), (_, info) in zip(tags, tag_info):
-            entry = self.add_dir(tag_name)
+            try:
+                entry = self[tag_name]
+            except KeyError:
+                entry = self.add_dir(tag_name)
+
             attr = entry.attr
             try:
                 ts = info['author']['date']
@@ -78,6 +92,9 @@ class RepoTagDirectory(RepoMetadataDirectory):
 
 class RepoBranchDirectory(RepoMetadataDirectory):
     def _initialize(self):
+        self.update()
+
+    def update(self):
         fut = get_branches(self.repo_owner, self.repo_name)
         _, branches = self.loop.run_until_complete(fut)
 
@@ -91,7 +108,11 @@ class RepoBranchDirectory(RepoMetadataDirectory):
         branch_info = self.loop.run_until_complete(gather_fut)
 
         for branch_name, (_, info) in zip(branch_names, branch_info):
-            entry = self.add_dir(branch_name)
+            try:
+                entry = self[branch_name]
+            except KeyError:
+                entry = self.add_dir(branch_name)
+
             attr = entry.attr
             try:
                 ts = info['commit']['commit']['author']['date']
@@ -103,58 +124,108 @@ class RepoBranchDirectory(RepoMetadataDirectory):
 
 
 class GithubFileSystem(FileSystem):
-    def __init__(self, *args, **kwargs):
-        self.monitoring = dict(users=kwargs.pop('users', []),
-                               organizations=kwargs.pop('organizations', []),
-                               )
+    def __init__(self, mount_point, users=None, organizations=None,
+                 update_rate=60.0, **kwargs):
+        if users is None:
+            users = []
+        if organizations is None:
+            organizations = []
 
-        super().__init__(*args, **kwargs)
+        self.loop = asyncio.get_event_loop()
+        self.monitoring = dict(users=list(users),
+                               organizations=list(organizations),
+                               )
+        self.update_rate = update_rate
+        super().__init__(mount_point, **kwargs)
 
     def init(self, userdata, conn):
         super().init(userdata, conn)
 
         root = self.root
-        self.loop = asyncio.get_event_loop()
-
         self.users = root.add_dir('users').obj
         self.orgs = root.add_dir('orgs').obj
+        self._update_thread = threading.Thread(target=self.update_loop)
+        self._update_thread.daemon = True
+        self._update_thread.start()
+
+    def update_loop(self):
+        asyncio.set_event_loop(self.loop)
+        while True:
+            self.update()
+            time.sleep(self.update_rate)
+
+    def update(self):
+        self.update_users()
+        self.update_organizations()
+
+    def update_users(self):
         for user in self.monitoring['users']:
-            user_dir = self.users.add_dir(user).obj
+            try:
+                entry = self.users[user]
+            except KeyError:
+                entry = self.users.add_dir(user)
+
+            user_dir = entry.obj
             _, repos = self.loop.run_until_complete(get_user_repos(user))
             logger.debug('-- User: %s --', user)
 
             for repo in repos:
-                self._init_repo(user_dir, repo)
+                self.update_repo(user_dir, repo)
 
+    def update_organizations(self):
         for org in self.monitoring['organizations']:
-            org_dir = self.orgs.add_dir(org).obj
+            try:
+                entry = self.orgs[org]
+            except KeyError:
+                entry = self.orgs.add_dir(org)
+
+            org_dir = entry.obj
             _, repos = self.loop.run_until_complete(get_org_repos(org))
-            logger.debug('-- Organization: %s --', user)
-
+            logger.debug('-- Organization: %s --', org)
             for repo in repos:
-                self._init_repo(org_dir, repo)
+                self.update_repo(org_dir, repo)
 
-    def _init_repo(self, dirobj, repo):
+    def update_repo(self, parent_obj, repo):
         repo_name = repo['name']
         logger.debug('Repo %s updated at: %s', repo_name, repo['updated_at'])
 
-        entry = dirobj.add_dir(repo['name'])
+        try:
+            entry = parent_obj[repo_name]
+        except KeyError:
+            entry = parent_obj.add_dir(repo_name)
+
         attr, repo_dir = entry.attr, entry.obj
         attr['st_mtime'] = iso8601_string_to_posix(repo['updated_at'])
         attr['st_ctime'] = iso8601_string_to_posix(repo['created_at'])
 
         repo_owner = repo['owner']['login']
-        tag_dir = RepoTagDirectory(self, dirobj.inode, repo_owner=repo_owner,
-                                   repo_name=repo_name)
-        repo_dir.add_dir('tags', dirobj=tag_dir)
 
-        branch_dir = RepoBranchDirectory(self, dirobj.inode,
-                                         repo_owner=repo_owner,
-                                         repo_name=repo_name)
-        repo_dir.add_dir('branches', dirobj=branch_dir)
+        self.update_tags(repo_dir, repo_owner, repo_name)
+        self.update_branches(repo_dir, repo_owner, repo_name)
 
-    def update_repo(self, user, repo_name):
-        pass
+    def update_tags(self, repo_dir, repo_owner, repo_name):
+        try:
+            entry = repo_dir['tags']
+        except KeyError:
+            tag_dir = RepoTagDirectory(self, repo_dir.inode,
+                                       repo_owner=repo_owner,
+                                       repo_name=repo_name)
+            entry = repo_dir.add_dir('tags', dirobj=tag_dir)
+        else:
+            tag_dir = entry.obj
+            tag_dir.update()
+
+    def update_branches(self, repo_dir, repo_owner, repo_name):
+        try:
+            entry = repo_dir['branches']
+        except KeyError:
+            branch_dir = RepoBranchDirectory(self, repo_dir.inode,
+                                             repo_owner=repo_owner,
+                                             repo_name=repo_name)
+            entry = repo_dir.add_dir('branches', dirobj=branch_dir)
+        else:
+            branch_dir = entry.obj
+            branch_dir.update()
 
     def mkdir(self, req, parent, name, mode):
         if parent == self.root.inode and name.decode('utf-8') == 'exit':
@@ -163,8 +234,9 @@ class GithubFileSystem(FileSystem):
         self.reply_err(req, errno.EIO)
 
 
-def main(mount_point, users, orgs):
-    GithubFileSystem(mount_point, users=users, organizations=orgs)
+def main(mount_point, users, orgs, update_rate):
+    GithubFileSystem(mount_point, users=users, organizations=orgs,
+                     update_rate=update_rate)
 
 
 if __name__ == "__main__":
@@ -176,7 +248,7 @@ if __name__ == "__main__":
             logging.getLogger(loggername).setLevel(logging.DEBUG)
         logging.basicConfig()
 
-    print(args)
     main(mount_point=args['<mount_point>'],
          users=args['--users'].split(','),
-         orgs=args['--orgs'].split(','))
+         orgs=args['--orgs'].split(','),
+         update_rate=float(args['--update-rate']))

@@ -19,9 +19,10 @@ class GitResponse:
         headers = response.headers
         self.timestamp = headers['DATE']
         self.etag = headers.get('ETAG', None)
-        self.rate_limit_remaining = headers['X-RATELIMIT-REMAINING']
+        self.rate_limit_remaining = int(headers['X-RATELIMIT-REMAINING'])
         self.unmodified = (response.status == 304)
-        logger.debug('Rate limit remaining: %s', self.rate_limit_remaining)
+        if (self.rate_limit_remaining % 100) == 0:
+            logger.debug('Rate limit remaining: %s', self.rate_limit_remaining)
 
     @property
     def headers(self):
