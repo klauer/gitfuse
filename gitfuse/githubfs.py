@@ -87,7 +87,10 @@ class RepoTagDirectory(RepoMetadataDirectory):
                 print(info, list(info.keys()))
             else:
                 mtime = iso8601_string_to_posix(ts)
-                attr['st_ctime'] = attr['st_mtime'] = mtime
+                if attr['st_ctime'] != mtime:
+                    attr['st_ctime'] = attr['st_mtime'] = mtime
+                    logger.debug('%s/%s tag %s updated at %s', self.repo_owner,
+                                 self.repo_name, tag_name, ts)
 
 
 class RepoBranchDirectory(RepoMetadataDirectory):
@@ -120,7 +123,11 @@ class RepoBranchDirectory(RepoMetadataDirectory):
                 print(info, list(info.keys()))
             else:
                 mtime = iso8601_string_to_posix(ts)
-                attr['st_ctime'] = attr['st_mtime'] = mtime
+                if attr['st_ctime'] != mtime:
+                    attr['st_ctime'] = attr['st_mtime'] = mtime
+                    logger.debug('%s/%s branch %s updated at %s',
+                                 self.repo_owner, self.repo_name, branch_name,
+                                 ts)
 
 
 class GithubFileSystem(FileSystem):
@@ -187,7 +194,6 @@ class GithubFileSystem(FileSystem):
 
     def update_repo(self, parent_obj, repo):
         repo_name = repo['name']
-        logger.debug('Repo %s updated at: %s', repo_name, repo['updated_at'])
 
         try:
             entry = parent_obj[repo_name]
@@ -195,12 +201,19 @@ class GithubFileSystem(FileSystem):
             entry = parent_obj.add_dir(repo_name)
 
         attr, repo_dir = entry.attr, entry.obj
-        attr['st_mtime'] = iso8601_string_to_posix(repo['updated_at'])
-        attr['st_ctime'] = iso8601_string_to_posix(repo['created_at'])
 
+        updated_at = iso8601_string_to_posix(repo['updated_at'])
         repo_owner = repo['owner']['login']
+        if attr['st_mtime'] != updated_at:
+            logger.debug('Repo %s/%s updated at: %s', repo_owner, repo_name,
+                         repo['updated_at'])
+            attr['st_mtime'] = updated_at
+            attr['st_ctime'] = iso8601_string_to_posix(repo['created_at'])
 
-        self.update_tags(repo_dir, repo_owner, repo_name)
+            self.update_tags(repo_dir, repo_owner, repo_name)
+        else:
+            logger.debug('Repo %s unmodified', repo_name)
+
         self.update_branches(repo_dir, repo_owner, repo_name)
 
     def update_tags(self, repo_dir, repo_owner, repo_name):
