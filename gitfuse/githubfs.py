@@ -113,46 +113,45 @@ class GithubFileSystem(FileSystem):
     def init(self, userdata, conn):
         super().init(userdata, conn)
 
-        tree = self.root
+        root = self.root
         self.loop = asyncio.get_event_loop()
 
-        self.users = tree.add_dir('users').obj
-        self.orgs = tree.add_dir('orgs').obj
+        self.users = root.add_dir('users').obj
+        self.orgs = root.add_dir('orgs').obj
         for user in self.monitoring['users']:
-            user_tree = self.users.add_dir(user).obj
+            user_dir = self.users.add_dir(user).obj
             _, repos = self.loop.run_until_complete(get_user_repos(user))
             logger.debug('-- User: %s --', user)
 
             for repo in repos:
-                self._init_repo(user_tree, repo)
+                self._init_repo(user_dir, repo)
 
         for org in self.monitoring['organizations']:
-            org_tree = self.orgs.add_dir(org).obj
+            org_dir = self.orgs.add_dir(org).obj
             _, repos = self.loop.run_until_complete(get_org_repos(org))
             logger.debug('-- Organization: %s --', user)
 
             for repo in repos:
-                self._init_repo(org_tree, repo)
+                self._init_repo(org_dir, repo)
 
-    def _init_repo(self, tree, repo):
+    def _init_repo(self, dirobj, repo):
         repo_name = repo['name']
         logger.debug('Repo %s updated at: %s', repo_name, repo['updated_at'])
 
-        entry = tree.add_dir(repo['name'])
-        attr, repo_tree = entry.attr, entry.obj
+        entry = dirobj.add_dir(repo['name'])
+        attr, repo_dir = entry.attr, entry.obj
         attr['st_mtime'] = iso8601_string_to_posix(repo['updated_at'])
         attr['st_ctime'] = iso8601_string_to_posix(repo['created_at'])
 
-
         repo_owner = repo['owner']['login']
-        tag_tree = RepoTagDirectory(self, tree.inode, repo_owner=repo_owner,
-                                    repo_name=repo_name)
-        repo_tree.add_dir('tags', tree=tag_tree)
+        tag_dir = RepoTagDirectory(self, dirobj.inode, repo_owner=repo_owner,
+                                   repo_name=repo_name)
+        repo_dir.add_dir('tags', dirobj=tag_dir)
 
-        branch_tree = RepoBranchDirectory(self, tree.inode,
-                                          repo_owner=repo_owner,
-                                          repo_name=repo_name)
-        repo_tree.add_dir('branches', tree=branch_tree)
+        branch_dir = RepoBranchDirectory(self, dirobj.inode,
+                                         repo_owner=repo_owner,
+                                         repo_name=repo_name)
+        repo_dir.add_dir('branches', dirobj=branch_dir)
 
     def update_repo(self, user, repo_name):
         pass

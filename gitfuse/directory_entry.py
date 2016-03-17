@@ -53,11 +53,8 @@ class DirectoryEntry:
 
         fuse.inode_entries[self.inode] = self.entry
 
-    def lookup(self, parent_inode, name):
-        try:
-            return self.entry_by_name[name]
-        except KeyError:
-            raise ValueError('Invalid entry name')
+    def __getitem__(self, name):
+        return self.entry_by_name[name]
 
     def get_entries(self):
         entries = [('.', self.attr),
@@ -69,21 +66,21 @@ class DirectoryEntry:
 
         return entries
 
-    def add_dir(self, dirname, *, tree=None):
-        if tree is None:
-            tree = DirectoryEntry(self.fuse, self.inode,
-                                  file_attr=dict(self.file_attr),
-                                  dir_attr=dict(self.dir_attr),
-                                  )
+    def add_dir(self, dirname, *, dirobj=None):
+        if dirobj is None:
+            dirobj = DirectoryEntry(self.fuse, self.inode,
+                                    file_attr=dict(self.file_attr),
+                                    dir_attr=dict(self.dir_attr),
+                                    )
 
-        attr = tree.attr
-        attr['st_ino'] = tree.inode
+        attr = dirobj.attr
+        attr['st_ino'] = dirobj.inode
         self.attr['st_nlink'] += 1
 
-        entry = EntryInfo(type_='dir', inode=tree.inode, attr=attr,
-                          name=dirname, obj=tree)
+        entry = EntryInfo(type_='dir', inode=dirobj.inode, attr=attr,
+                          name=dirname, obj=dirobj)
         self.entry_by_name[dirname] = entry
-        self.fuse.inode_entries[tree.inode] = entry
+        self.fuse.inode_entries[dirobj.inode] = entry
         return entry
 
     def add_file(self, fn, *, obj=None, inode=None):

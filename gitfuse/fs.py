@@ -45,8 +45,8 @@ class FileSystem(FUSELL):
         name = name.decode('utf-8')
 
         try:
-            entry = parent.lookup(parent_inode, name)
-        except (ValueError, AttributeError):
+            entry = parent[name]
+        except (KeyError, TypeError):
             self.reply_err(req, errno.ENOENT)
         else:
             entry = dict(ino=entry.inode,
