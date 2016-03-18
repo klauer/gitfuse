@@ -15,6 +15,7 @@ import signal
 import time
 import asyncio
 import logging
+import functools
 import threading
 import errno
 
@@ -34,6 +35,17 @@ def iso8601_string_to_posix(string_ts):
     return time.mktime(dt.timetuple())
 
 
+def require_initialization(fcn):
+    @functools.wraps(fcn)
+    def inner(self, *args, **kwargs):
+        if not self._initialized:
+            self._initialized = True
+            self.update()
+
+        return fcn(self, *args, **kwargs)
+    return inner
+
+
 class RepoMetadataDirectory(DirectoryEntry):
     def __init__(self, *args, **kwargs):
         self.repo_owner = kwargs.pop('repo_owner')
@@ -45,23 +57,16 @@ class RepoMetadataDirectory(DirectoryEntry):
     def loop(self):
         return self.fuse.loop
 
-    def _initialize(self):
-        pass
+    @require_initialization
+    def __getitem__(self, key):
+        return super().__getitem__(key)
 
+    @require_initialization
     def get_entries(self):
-        if not self._initialized:
-            try:
-                self._initialize()
-            finally:
-                self._initialized = True
-
         return super().get_entries()
 
 
 class RepoTagDirectory(RepoMetadataDirectory):
-    def _initialize(self):
-        self.update()
-
     def update(self):
         _, tags = self.loop.run_until_complete(get_tags(self.repo_owner,
                                                         self.repo_name))
@@ -92,11 +97,10 @@ class RepoTagDirectory(RepoMetadataDirectory):
                     logger.debug('%s/%s tag %s updated at %s', self.repo_owner,
                                  self.repo_name, tag_name, ts)
 
+        # TODO remove entries that are no longer there
+
 
 class RepoBranchDirectory(RepoMetadataDirectory):
-    def _initialize(self):
-        self.update()
-
     def update(self):
         fut = get_branches(self.repo_owner, self.repo_name)
         _, branches = self.loop.run_until_complete(fut)
